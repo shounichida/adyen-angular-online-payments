@@ -4,6 +4,7 @@ import { ApiService } from '../../api.service';
 import AdyenCheckout from '@adyen/adyen-web';
 import { environment } from '../../../environments/environment';
 import { HttpClient } from '@angular/common/http';
+import { map, mergeMap, tap } from 'rxjs/operators'
 
 @Component({
   selector: 'app-checkout',
@@ -55,31 +56,24 @@ export class CheckoutComponent implements OnInit {
     // obtain ADYEN_CLIENT_KEY
     this.http
       .get<any>('/api/config', {observe: 'response'})
-      .subscribe(resp => {
-        this.clientKey = resp.body.api_key;
-    });
-
-
-    if (!this.sessionId) {
-
-      this.apiService.sessions().subscribe(
-        (async res => {
-
-            // Create AdyenCheckout using Sessions response
-            const checkout = await this.createAdyenCheckout(res)
-
-            await checkout.create(this.type).mount(this.hook.nativeElement);
+      .pipe(
+        map(response => response.body),
+        map(body => {
+          this.clientKey = body.api_key;
+          console.log(`this.clientKey ${this.clientKey}`);
         }),
-        (async error => {
-          console.log('Error is: ', error);
+        mergeMap(() => this.apiService.sessions()),
+        map(response => {
+          console.log(`this.clientKey ${response}`);
+          if (!this.sessionId) {
+            return this.createAdyenCheckout(response).then(checkout => checkout.create(this.type).mount(this.hook.nativeElement));
+          } else {
+            // existing session: complete Checkout
+            return this.finalizeCheckout();
+          }
         })
-      );
-    }
-    else {
-      // existing session: complete Checkout
-      this.finalizeCheckout();
-    }
-
+      )
+      .subscribe();
   }
 
   async createAdyenCheckout(session: any) {
@@ -99,14 +93,14 @@ export class CheckoutComponent implements OnInit {
                   holderNameRequired: true,
                   name: "Credit or debit card",
                   amount: {
-                      value: 1000,
+                      value: 10000,
                       currency: "EUR"
                   }
               },
               paypal: {
                   amount: {
                       currency: "USD",
-                      value: 1000
+                      value: 10000
                   },
                   environment: "test",
                   countryCode: "US"   // Only needed for test. This will be automatically retrieved when you are in production.
